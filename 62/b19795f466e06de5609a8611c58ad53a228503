@@ -1,0 +1,23 @@
+chat.py
+  s_4785c418d17ced::t_3eef696df4ecd0 1-165
+codex_auth.py
+  s_4785c418d17ced::t_9e87871844e847 1-106
+tests/test_codex_auth.py
+  s_4785c418d17ced::t_63fc5fc1bd3705 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "62b19795f466e06de5609a8611c58ad53a228503",
+  "prompts": {},
+  "sessions": {
+    "s_4785c418d17ced": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f4791-ff11-7d51-9aed-c97f84d28573",
+        "model": "unknown"
+      },
+      "human_author": "sickelap <sickelap@pm.me>"
+    }
+  }
+}
