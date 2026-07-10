@@ -1,0 +1,33 @@
+openspec/changes/add-openai-api-proxy/.openspec.yaml
+  s_23241598176892::t_dc65c2ae4c3619 1-2
+chat.py
+  s_4785c418d17ced::t_3194e15b9cf4cc 8-9
+codex_auth.py
+  s_4785c418d17ced::t_676f3d67e89ec6 1-106
+tests/test_codex_auth.py
+  s_4785c418d17ced::t_937d4c22907600 1-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.9",
+  "base_commit_sha": "9ad0a1149f3e6321573a552694ada968a23a14d5",
+  "prompts": {},
+  "sessions": {
+    "s_23241598176892": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f4683-6251-7f01-9686-2d8c36507172",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sickelap <sickelap@pm.me>"
+    },
+    "s_4785c418d17ced": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f4791-ff11-7d51-9aed-c97f84d28573",
+        "model": "unknown"
+      },
+      "human_author": "sickelap <sickelap@pm.me>"
+    }
+  }
+}
