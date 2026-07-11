@@ -11,7 +11,7 @@ use crate::AppError;
 pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 pub const OPENAI_API_BASE_URL: &str = "https://api.openai.com/v1";
 const REFRESH_URL: &str = "https://auth.openai.com/oauth/token";
-const USER_AGENT: &str = "codex-proxy-rust";
+const USER_AGENT: &str = "codex_vscode/0.94.0-alpha.7 (Mac OS 26.2.0; arm64) vscode/2.4.22 (codex_vscode; 0.1.0)";
 
 #[derive(Debug, Clone)]
 pub struct Auth {
