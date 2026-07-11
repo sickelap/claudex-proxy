@@ -1,32 +1,38 @@
-# codex-chat
+# codex-proxy
 
-`codex-chat` is a small, dependency-free Python bridge for using credentials from the Codex CLI with the OpenAI Responses API. It can connect agentic coding tools that support the OpenAI Responses API to the ChatGPT Codex backend. It provides two ways to send requests:
+`codex-proxy` is a small, self-contained Rust binary for using credentials from the Codex CLI with the OpenAI Responses API. It can connect agentic coding tools that support the OpenAI Responses API to the ChatGPT Codex backend. It provides two ways to send requests, selected by subcommand:
 
-- `chat.py`: an interactive terminal chat client.
-- `openai_api_proxy.py`: a local OpenAI-compatible Responses API endpoint for agentic coding tools and other API clients.
+- `codex-proxy chat`: an interactive terminal chat client.
+- `codex-proxy` / `codex-proxy proxy`: a local OpenAI-compatible Responses API endpoint for agentic coding tools and other API clients.
 
-Both scripts read `~/.codex/auth.json`. Codex OAuth credentials are sent to the ChatGPT Codex backend; an `OPENAI_API_KEY` entry in that file is used with the public OpenAI API instead. OAuth credentials are refreshed in memory after a `401` or `403` response when a refresh token is available.
+Both subcommands read `~/.codex/auth.json`. Codex OAuth credentials are sent to the ChatGPT Codex backend; an `OPENAI_API_KEY` entry in that file is used with the public OpenAI API instead. OAuth credentials are refreshed in memory after a `401` or `403` response when a refresh token is available.
 
 ## Requirements
 
-- Python 3.8 or newer
+- The Rust toolchain (`cargo`, `rustc`) to build the binary
 - A Codex CLI login, which creates `~/.codex/auth.json`
 - An agentic coding tool or API client that supports the OpenAI Responses API, if you want to use the proxy
 
-There are no third-party Python dependencies.
-
-Log in with Codex before running either script:
+Log in with Codex before running either subcommand:
 
 ```sh
 codex login
 ```
+
+## Building
+
+```sh
+cargo build --release
+```
+
+The binary is written to `target/release/codex-proxy`.
 
 ## Interactive Chat
 
 Run the terminal client from the repository root:
 
 ```sh
-python3 chat.py
+codex-proxy chat
 ```
 
 Enter prompts at the `>` prompt. The client keeps the current conversation in memory and streams the response text. Use `/exit`, `/quit`, or Ctrl-D to quit.
@@ -34,7 +40,7 @@ Enter prompts at the `>` prompt. The client keeps the current conversation in me
 The default model is `gpt-5.5`. Override it with `OPENAI_MODEL`:
 
 ```sh
-OPENAI_MODEL=gpt-5.6-sol python3 chat.py
+OPENAI_MODEL=gpt-5.6-sol codex-proxy chat
 ```
 
 Conversation history is not persisted.
@@ -43,16 +49,16 @@ Conversation history is not persisted.
 
 The proxy exposes `POST /v1/responses` on `127.0.0.1:8000` and forwards requests to the upstream Responses API. It supports regular JSON responses and streaming server-sent events, so it can be used by agentic coding tools that allow a custom OpenAI base URL.
 
-Start it in one terminal:
+Start it in one terminal (`proxy` is the default subcommand):
 
 ```sh
-python3 openai_api_proxy.py
+codex-proxy
 ```
 
 Use a different local address or port when needed:
 
 ```sh
-python3 openai_api_proxy.py --host 127.0.0.1 --port 9000
+codex-proxy proxy --host 127.0.0.1 --port 9000
 ```
 
 Configure your tool to use this OpenAI API base URL:
@@ -92,18 +98,18 @@ The proxy has no client authentication. Keep it bound to the default `127.0.0.1`
 
 ## Files
 
-- `codex_auth.py`: loads Codex OAuth credentials or an OpenAI API key and handles token refresh.
-- `chat.py`: maintains an in-memory conversation and renders streamed response text.
-- `openai_api_proxy.py`: forwards local Responses API requests and streams upstream responses unchanged.
+- `src/auth.rs`: loads Codex OAuth credentials or an OpenAI API key and handles token refresh.
+- `src/chat.rs`: maintains an in-memory conversation and renders streamed response text.
+- `src/proxy.rs`: forwards local Responses API requests and streams upstream responses unchanged.
+- `src/main.rs`: CLI argument parsing and subcommand dispatch.
 - `opencode.json.sample`: example OpenCode provider and model configuration.
-- `tests/`: standard-library unit and proxy integration tests.
 
 ## Tests
 
 Run the test suite with:
 
 ```sh
-python3 -m unittest discover -s tests -v
+cargo test
 ```
 
 ## License
