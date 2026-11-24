@@ -39,10 +39,10 @@ OpenAI-compatible clients use `http://127.0.0.1:8000/v1` as their base URL. Anth
 
 ## Model registry
 
-Clients choose a public model alias. The registry is the only component that selects its provider and upstream model. Built-in mappings cover the models in `opencode.json.sample`. To add Anthropic or custom aliases, copy [`claudex.config.example.json`](claudex.config.example.json):
+Clients choose a public model alias. The registry is the only component that selects its provider and upstream model. Built-in mappings cover the models in `examples/opencode.json.sample`. To add Anthropic or custom aliases, copy [`examples/claudex.config.example.json`](examples/claudex.config.example.json):
 
 ```sh
-claudex-proxy proxy --config ./claudex.config.example.json
+claudex-proxy proxy --config ./examples/claudex.config.example.json
 ```
 
 `CLAUDEX_CONFIG` selects the same file when `--config` is absent; the CLI flag takes precedence. Duplicate aliases, unknown providers, and unreadable or invalid files stop startup. Entries declare capabilities, namespaced provider options, and an optional Anthropic output-token default.
@@ -60,11 +60,11 @@ claudex-proxy proxy --config ./claudex.config.example.json
 For OpenCode:
 
 ```sh
-cp opencode.json.sample ~/.config/opencode/opencode.json
+cp examples/opencode.json.sample ~/.config/opencode/opencode.json
 opencode
 ```
 
-For an Anthropic-compatible coding harness, see [`claude-code.env.sample`](claude-code.env.sample). Its placeholder key only satisfies clients that require a value; the proxy does not forward it.
+For an Anthropic-compatible coding harness, see [`examples/claude-code.env.sample`](examples/claude-code.env.sample). Its placeholder key only satisfies clients that require a value; the proxy does not forward it.
 
 Direct Responses request:
 
@@ -121,9 +121,9 @@ The proxy has no client authentication. Keep it bound to `127.0.0.1`; anyone who
 - `src/providers.rs`: Codex and Anthropic upstream adapters.
 - `src/proxy.rs`: HTTP input/output adapter.
 - `src/chat.rs`: terminal input/output adapter.
-- `claudex.config.example.json`: model-registry example.
-- `opencode.json.sample`: OpenCode example.
-- `claude-code.env.sample`: Anthropic-compatible harness example.
+- `examples/claudex.config.example.json`: model-registry example.
+- `examples/opencode.json.sample`: OpenCode example.
+- `examples/claude-code.env.sample`: Anthropic-compatible harness example.
 - `examples/anthropic-messages-request.json`: Messages request fixture.
 
 ## Tests

@@ -174,7 +174,8 @@ mod tests {
 
     #[test]
     fn every_checked_in_example_model_resolves() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("claudex.config.example.json");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/claudex.config.example.json");
         let mappings = load_mappings_from(Some(&path), None).unwrap();
         let registry = StaticModelRegistry::new(mappings.clone()).unwrap();
         assert!(!mappings.is_empty());
@@ -188,16 +189,16 @@ mod tests {
     fn documented_json_and_sample_files_are_valid_and_present() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"));
         for relative in [
-            "claudex.config.example.json",
+            "examples/claudex.config.example.json",
             "examples/anthropic-messages-request.json",
-            "opencode.json.sample",
+            "examples/opencode.json.sample",
         ] {
             let content = fs::read_to_string(root.join(relative))
                 .unwrap_or_else(|error| panic!("missing documented sample {relative}: {error}"));
             serde_json::from_str::<serde_json::Value>(&content)
                 .unwrap_or_else(|error| panic!("invalid JSON in {relative}: {error}"));
         }
-        assert!(root.join("claude-code.env.sample").is_file());
+        assert!(root.join("examples/claude-code.env.sample").is_file());
         let metadata_example: serde_json::Value = serde_json::from_str(
             r#"{"include_metadata":true,"session_id":"my-opaque-correlation-id"}"#,
         )
