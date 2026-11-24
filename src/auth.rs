@@ -2,19 +2,24 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_json::Value;
 
 use crate::AppError;
+use crate::application::CredentialProvider;
+use crate::domain::{InferenceError, ProviderCredential, ProviderKind};
 
 pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
 pub const OPENAI_API_BASE_URL: &str = "https://api.openai.com/v1";
+pub const ANTHROPIC_API_BASE_URL: &str = "https://api.anthropic.com/v1";
 const REFRESH_URL: &str = "https://auth.openai.com/oauth/token";
-const USER_AGENT: &str = "codex_vscode/0.94.0-alpha.7 (Mac OS 26.2.0; arm64) vscode/2.4.22 (codex_vscode; 0.1.0)";
+#[cfg(test)]
+const USER_AGENT: &str =
+    "codex_vscode/0.94.0-alpha.7 (Mac OS 26.2.0; arm64) vscode/2.4.22 (codex_vscode; 0.1.0)";
 
 #[derive(Debug, Clone)]
-pub struct Auth {
+pub struct CodexCredential {
     pub token: String,
     pub refresh_token: Option<String>,
     pub account_id: Option<String>,
@@ -22,9 +27,9 @@ pub struct Auth {
     pub base_url: String,
 }
 
-impl Auth {
+impl CodexCredential {
     pub fn new(token: impl Into<String>, base_url: impl Into<String>) -> Self {
-        Auth {
+        CodexCredential {
             token: token.into(),
             refresh_token: None,
             account_id: None,
@@ -33,6 +38,7 @@ impl Auth {
         }
     }
 
+    #[cfg(test)]
     pub fn headers(&self) -> Vec<(String, String)> {
         let mut headers = vec![
             (
@@ -47,6 +53,54 @@ impl Auth {
         }
         headers
     }
+}
+
+impl From<CodexCredential> for ProviderCredential {
+    fn from(credential: CodexCredential) -> Self {
+        ProviderCredential::Codex {
+            token: credential.token,
+            refresh_token: credential.refresh_token,
+            account_id: credential.account_id,
+            client_id: credential.client_id,
+            base_url: credential.base_url,
+        }
+    }
+}
+
+pub struct LocalCredentialProvider;
+
+impl CredentialProvider for LocalCredentialProvider {
+    fn load(&self, provider: ProviderKind) -> Result<ProviderCredential, InferenceError> {
+        match provider {
+            ProviderKind::Codex => load_codex_credential()
+                .map(ProviderCredential::from)
+                .map_err(|error| InferenceError::upstream(error.0, Some(502))),
+            ProviderKind::Anthropic => load_anthropic_credential()
+                .map_err(|error| InferenceError::upstream(error.0, Some(502))),
+        }
+    }
+}
+
+pub fn load_anthropic_credential() -> Result<ProviderCredential, AppError> {
+    load_anthropic_credential_from(
+        std::env::var("ANTHROPIC_API_KEY").ok().as_deref(),
+        std::env::var("CLAUDE_CODE_OAUTH_TOKEN").ok().as_deref(),
+    )
+}
+
+fn load_anthropic_credential_from(
+    api_key: Option<&str>,
+    oauth_token: Option<&str>,
+) -> Result<ProviderCredential, AppError> {
+    if let Some(value) = api_key.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(ProviderCredential::AnthropicApiKey(value.to_string()));
+    }
+    if let Some(value) = oauth_token.map(str::trim).filter(|value| !value.is_empty()) {
+        return Ok(ProviderCredential::AnthropicOAuth(value.to_string()));
+    }
+    Err(AppError(
+        "no usable Anthropic credential: set ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN".into(),
+    ))
 }
 
 /// Decode the payload segment of a JWT (unverified), returning empty claims on failure.
@@ -98,11 +152,11 @@ fn default_auth_path() -> PathBuf {
     Path::new(&home).join(".codex").join("auth.json")
 }
 
-pub fn load_auth() -> Result<Auth, AppError> {
-    load_auth_from(&default_auth_path())
+pub fn load_codex_credential() -> Result<CodexCredential, AppError> {
+    load_codex_credential_from(&default_auth_path())
 }
 
-pub fn load_auth_from(path: &Path) -> Result<Auth, AppError> {
+pub fn load_codex_credential_from(path: &Path) -> Result<CodexCredential, AppError> {
     let content = fs::read_to_string(path)
         .map_err(|e| AppError(format!("failed to read {}: {e}", path.display())))?;
     let data: Value = serde_json::from_str(&content)
@@ -115,7 +169,10 @@ pub fn load_auth_from(path: &Path) -> Result<Auth, AppError> {
         .filter(|s| !s.is_empty())
     {
         let tokens = data.get("tokens").expect("checked above");
-        let id_token = tokens.get("id_token").and_then(|v| v.as_str()).unwrap_or("");
+        let id_token = tokens
+            .get("id_token")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         let account_id = tokens
             .get("account_id")
@@ -130,7 +187,7 @@ pub fn load_auth_from(path: &Path) -> Result<Auth, AppError> {
 
         let client_id = client_id_from_tokens(access_token, id_token)?;
 
-        let mut auth = Auth::new(access_token, CHATGPT_CODEX_BASE_URL);
+        let mut auth = CodexCredential::new(access_token, CHATGPT_CODEX_BASE_URL);
         auth.refresh_token = refresh_token;
         auth.account_id = account_id;
         auth.client_id = Some(client_id);
@@ -142,7 +199,7 @@ pub fn load_auth_from(path: &Path) -> Result<Auth, AppError> {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
     {
-        return Ok(Auth::new(api_key, OPENAI_API_BASE_URL));
+        return Ok(CodexCredential::new(api_key, OPENAI_API_BASE_URL));
     }
 
     Err(AppError(format!(
@@ -159,7 +216,7 @@ fn chatgpt_account_id(id_token: &str) -> Option<String> {
 
 /// Refresh the access token in memory. Never persists to disk. Returns success/failure
 /// without raising.
-pub fn refresh_auth(auth: &mut Auth) -> bool {
+pub fn refresh_auth(auth: &mut CodexCredential) -> bool {
     let Some(refresh_token) = auth.refresh_token.clone() else {
         return false;
     };
@@ -212,37 +269,6 @@ pub fn refresh_auth(auth: &mut Auth) -> bool {
     access_token.is_some()
 }
 
-/// Shared helper: on 401/403, refresh the credential (via `refresh`) and replay the
-/// upstream call (via `send`) once.
-pub fn send_with_refresh_retry_using<T, F, R>(
-    auth: &mut Auth,
-    mut send: F,
-    mut refresh: R,
-) -> Result<T, ureq::Error>
-where
-    F: FnMut(&Auth) -> Result<T, ureq::Error>,
-    R: FnMut(&mut Auth) -> bool,
-{
-    match send(auth) {
-        Err(ureq::Error::Status(code, response)) if code == 401 || code == 403 => {
-            if refresh(auth) {
-                send(auth)
-            } else {
-                Err(ureq::Error::Status(code, response))
-            }
-        }
-        other => other,
-    }
-}
-
-/// Shared helper using the real in-memory token refresh.
-pub fn send_with_refresh_retry<T, F>(auth: &mut Auth, send: F) -> Result<T, ureq::Error>
-where
-    F: FnMut(&Auth) -> Result<T, ureq::Error>,
-{
-    send_with_refresh_retry_using(auth, send, refresh_auth)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,8 +306,11 @@ mod tests {
             "access-client"
         );
         assert_eq!(
-            client_id_from_tokens("", &jwt_with_claims(serde_json::json!({"aud": "id-client"})))
-                .unwrap(),
+            client_id_from_tokens(
+                "",
+                &jwt_with_claims(serde_json::json!({"aud": "id-client"}))
+            )
+            .unwrap(),
             "id-client"
         );
         assert_eq!(
@@ -293,19 +322,19 @@ mod tests {
             "first-client"
         );
 
-        let err =
-            client_id_from_tokens("", &jwt_with_claims(serde_json::json!({"aud": []}))).unwrap_err();
+        let err = client_id_from_tokens("", &jwt_with_claims(serde_json::json!({"aud": []})))
+            .unwrap_err();
         assert!(err.0.contains("client_id"));
     }
 
-    fn write_auth_and_load(data: &Value) -> Result<Auth, AppError> {
+    fn write_auth_and_load(data: &Value) -> Result<CodexCredential, AppError> {
         let mut path = std::env::temp_dir();
         path.push(format!("claudex-proxy-test-auth-{:p}.json", data));
         let mut file = fs::File::create(&path).unwrap();
         file.write_all(serde_json::to_vec(data).unwrap().as_slice())
             .unwrap();
         drop(file);
-        let result = load_auth_from(&path);
+        let result = load_codex_credential_from(&path);
         let _ = fs::remove_file(&path);
         result
     }
@@ -331,25 +360,61 @@ mod tests {
         assert_eq!(auth.client_id, Some("codex-client".to_string()));
         assert_eq!(auth.base_url, CHATGPT_CODEX_BASE_URL);
         let headers = auth.headers();
-        assert!(headers
-            .iter()
-            .any(|(k, v)| k == "ChatGPT-Account-ID" && v == "account-from-id-token"));
+        assert!(
+            headers
+                .iter()
+                .any(|(k, v)| k == "ChatGPT-Account-ID" && v == "account-from-id-token")
+        );
     }
 
     #[test]
     fn loads_openai_api_key_fallback() {
-        let auth =
-            write_auth_and_load(&serde_json::json!({"OPENAI_API_KEY": "sk-local"})).unwrap();
+        let auth = write_auth_and_load(&serde_json::json!({"OPENAI_API_KEY": "sk-local"})).unwrap();
 
         assert_eq!(auth.token, "sk-local");
         assert_eq!(auth.refresh_token, None);
         assert_eq!(auth.base_url, OPENAI_API_BASE_URL);
-        assert!(!auth.headers().iter().any(|(k, _)| k == "ChatGPT-Account-ID"));
+        assert!(
+            !auth
+                .headers()
+                .iter()
+                .any(|(k, _)| k == "ChatGPT-Account-ID")
+        );
+        assert_eq!(
+            ProviderCredential::from(auth).provider(),
+            crate::domain::ProviderKind::Codex
+        );
     }
 
     #[test]
     fn fails_when_no_usable_credential_is_present() {
         let err = write_auth_and_load(&serde_json::json!({})).unwrap_err();
         assert!(err.0.contains("no usable token found in"));
+    }
+
+    #[test]
+    fn anthropic_credentials_prefer_api_key_then_oauth_and_are_tagged() {
+        let credential = load_anthropic_credential_from(Some(" api-key "), Some("oauth")).unwrap();
+        assert_eq!(
+            credential,
+            ProviderCredential::AnthropicApiKey("api-key".into())
+        );
+        assert_eq!(credential.provider(), ProviderKind::Anthropic);
+
+        assert_eq!(
+            load_anthropic_credential_from(Some(" "), Some(" oauth ")).unwrap(),
+            ProviderCredential::AnthropicOAuth("oauth".into())
+        );
+    }
+
+    #[test]
+    fn anthropic_credentials_reject_empty_or_missing_values() {
+        assert!(
+            load_anthropic_credential_from(Some(""), Some("  "))
+                .unwrap_err()
+                .0
+                .contains("ANTHROPIC_API_KEY")
+        );
+        assert!(load_anthropic_credential_from(None, None).is_err());
     }
 }

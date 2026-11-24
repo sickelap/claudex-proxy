@@ -1,86 +1,72 @@
 # claudex-proxy
 
-`claudex-proxy` is a small, self-contained Rust binary for using credentials from the Codex CLI with the OpenAI Responses API. It can connect agentic coding tools that support the OpenAI Responses API to the ChatGPT Codex backend. It provides two ways to send requests, selected by subcommand:
+`claudex-proxy` is a local gateway for coding tools that speak either the OpenAI Responses API or the Anthropic Messages API. A model registry routes each public model alias to Codex/OpenAI or Anthropic while clients keep using their standard protocol.
 
-- `claudex-proxy chat`: an interactive terminal chat client.
-- `claudex-proxy` / `claudex-proxy proxy`: a local OpenAI-compatible Responses API endpoint for agentic coding tools and other API clients.
-
-Both subcommands read `~/.codex/auth.json`. Codex OAuth credentials are sent to the ChatGPT Codex backend; an `OPENAI_API_KEY` entry in that file is used with the public OpenAI API instead. OAuth credentials are refreshed in memory after a `401` or `403` response when a refresh token is available.
+- `claudex-proxy chat`: interactive terminal chat.
+- `claudex-proxy` / `claudex-proxy proxy`: local `POST /v1/responses` and `POST /v1/messages` endpoints.
 
 ## Requirements
 
-- The Rust toolchain (`cargo`, `rustc`) to build the binary
-- A Codex CLI login, which creates `~/.codex/auth.json`
-- An agentic coding tool or API client that supports the OpenAI Responses API, if you want to use the proxy
+- Rust (`cargo` and `rustc`)
+- A Codex CLI login for Codex models, or an Anthropic credential for Anthropic models
+- A client supporting Responses or Messages
 
-Log in with Codex before running either subcommand:
+For Codex, log in before starting the proxy:
 
 ```sh
 codex login
 ```
 
-## Building
+## Build and run
 
 ```sh
 cargo build --release
-```
-
-The binary is written to `target/release/claudex-proxy`.
-
-## Interactive Chat
-
-Run the terminal client from the repository root:
-
-```sh
-claudex-proxy chat
-```
-
-Enter prompts at the `>` prompt. The client keeps the current conversation in memory and streams the response text. Use `/exit`, `/quit`, or Ctrl-D to quit.
-
-The default model is `gpt-5.5`. Override it with `OPENAI_MODEL`:
-
-```sh
-OPENAI_MODEL=gpt-5.6-sol claudex-proxy chat
-```
-
-Conversation history is not persisted.
-
-## OpenAI API Proxy
-
-The proxy exposes `POST /v1/responses` on `127.0.0.1:8000` and forwards requests to the upstream Responses API. It supports regular JSON responses and streaming server-sent events, so it can be used by agentic coding tools that allow a custom OpenAI base URL.
-
-Start it in one terminal (`proxy` is the default subcommand):
-
-```sh
 claudex-proxy
 ```
 
-Use a different local address or port when needed:
+The default address is `127.0.0.1:8000`. Change it when needed:
 
 ```sh
 claudex-proxy proxy --host 127.0.0.1 --port 9000
 ```
 
-Configure your tool to use this OpenAI API base URL:
+The proxy supports JSON and server-sent event responses on:
 
-```text
-http://127.0.0.1:8000/v1
+- `POST /v1/responses`
+- `POST /v1/messages`
+
+OpenAI-compatible clients use `http://127.0.0.1:8000/v1` as their base URL. Anthropic-compatible clients use `http://127.0.0.1:8000`; they append `/v1/messages`.
+
+## Model registry
+
+Clients choose a public model alias. The registry is the only component that selects its provider and upstream model. Built-in mappings cover the models in `opencode.json.sample`. To add Anthropic or custom aliases, copy [`claudex.config.example.json`](claudex.config.example.json):
+
+```sh
+claudex-proxy proxy --config ./claudex.config.example.json
 ```
 
-The API key can be any non-empty placeholder if the client requires one. The proxy ignores incoming authorization headers and authenticates upstream requests with `~/.codex/auth.json`.
+`CLAUDEX_CONFIG` selects the same file when `--config` is absent; the CLI flag takes precedence. Duplicate aliases, unknown providers, and unreadable or invalid files stop startup. Entries declare capabilities, namespaced provider options, and an optional Anthropic output-token default.
 
-### OpenCode Example
+## Credentials
 
-For OpenCode, copy the included sample configuration into this project's OpenCode configuration and start OpenCode in another terminal:
+- Codex OAuth or OpenAI API key: `~/.codex/auth.json`
+- Anthropic API key: `ANTHROPIC_API_KEY`
+- Claude Code OAuth fallback: `CLAUDE_CODE_OAUTH_TOKEN`
+
+`ANTHROPIC_API_KEY` wins when both Anthropic variables are set. Credentials are isolated by provider. Incoming client `Authorization` and API-key headers are never used upstream. Codex OAuth refreshes once in memory after a `401` or `403` when a refresh token is available.
+
+## Client examples
+
+For OpenCode:
 
 ```sh
 cp opencode.json.sample ~/.config/opencode/opencode.json
 opencode
 ```
 
-If the proxy uses a different port, update `provider.openai-api-local.options.baseURL` in `opencode.json`. The sample defines several model and reasoning-effort variants and defaults to `openai-api-local/gpt-5.6-sol`. Its configured `apiKey` is only a placeholder required by the OpenAI SDK.
+For an Anthropic-compatible coding harness, see [`claude-code.env.sample`](claude-code.env.sample). Its placeholder key only satisfies clients that require a value; the proxy does not forward it.
 
-You can also call the proxy directly:
+Direct Responses request:
 
 ```sh
 curl http://127.0.0.1:8000/v1/responses \
@@ -88,25 +74,59 @@ curl http://127.0.0.1:8000/v1/responses \
   -d '{"model":"gpt-5.5","input":"Hello","store":false}'
 ```
 
-### Compatibility
+Direct Messages request:
 
-This is not a complete implementation of the OpenAI API. It only accepts `POST /v1/responses`; tools that require `/v1/chat/completions` or other endpoints are not supported. Requests and responses are otherwise passed through, except that `max_output_tokens` is removed for compatibility with the Codex backend.
+```sh
+curl http://127.0.0.1:8000/v1/messages \
+  -H 'Content-Type: application/json' \
+  -d @examples/anthropic-messages-request.json
+```
 
-### Security
+## Optional routing metadata
 
-The proxy has no client authentication. Keep it bound to the default `127.0.0.1`; do not expose it to a network or the public internet. Anyone able to reach the proxy can make requests using your upstream account.
+Add this object at the request top level as `"claudex"`:
+
+```json
+{
+  "include_metadata": true,
+  "session_id": "my-opaque-correlation-id"
+}
+```
+
+The extension is removed before the upstream call. JSON responses receive a `claudex` metadata object. Streams receive `claudex.metadata` as their first event. Metadata contains only the session ID, provider, requested alias, upstream model, and upstream request ID when available.
+
+## Interactive chat
+
+```sh
+claudex-proxy chat
+```
+
+The chat keeps history in memory and streams text. Use `/exit`, `/quit`, or Ctrl-D to quit. It defaults to `gpt-5.5`; set `OPENAI_MODEL` to another configured alias.
+
+## Compatibility limits
+
+This is not a complete implementation of either provider API. Chat Completions and other routes are not supported. Native protocol/provider pairs are relayed at highest fidelity. Cross-provider paths translate conversation content, system instructions, images, tools, tool results, tool choice, reasoning controls, output limits, usage, stop reasons, and errors.
+
+Features without a safe representation are rejected before contacting the upstream. Signed Anthropic thinking blocks and unknown opaque provider blocks are not replayed across providers.
+
+The proxy has no client authentication. Keep it bound to `127.0.0.1`; anyone who can reach it can use your configured upstream account.
 
 ## Files
 
-- `src/auth.rs`: loads Codex OAuth credentials or an OpenAI API key and handles token refresh.
-- `src/chat.rs`: maintains an in-memory conversation and renders streamed response text.
-- `src/proxy.rs`: forwards local Responses API requests and streams upstream responses unchanged.
-- `src/main.rs`: CLI argument parsing and subcommand dispatch.
-- `opencode.json.sample`: example OpenCode provider and model configuration.
+- `src/application.rs`: model routing, capability checks, credentials, and metadata.
+- `src/auth.rs`: provider-specific credential loading and Codex refresh.
+- `src/codecs.rs`: Responses/Messages request, response, and SSE translation.
+- `src/config.rs`: registry loading and built-in mappings.
+- `src/domain.rs`: structured provider-neutral types and ordered events.
+- `src/providers.rs`: Codex and Anthropic upstream adapters.
+- `src/proxy.rs`: HTTP input/output adapter.
+- `src/chat.rs`: terminal input/output adapter.
+- `claudex.config.example.json`: model-registry example.
+- `opencode.json.sample`: OpenCode example.
+- `claude-code.env.sample`: Anthropic-compatible harness example.
+- `examples/anthropic-messages-request.json`: Messages request fixture.
 
 ## Tests
-
-Run the test suite with:
 
 ```sh
 cargo test

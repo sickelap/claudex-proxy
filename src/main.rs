@@ -1,5 +1,10 @@
+mod application;
 mod auth;
 mod chat;
+mod codecs;
+mod config;
+mod domain;
+mod providers;
 mod proxy;
 
 use std::fmt;
@@ -37,6 +42,7 @@ impl From<std::io::Error> for AppError {
 struct ProxyArgs {
     host: String,
     port: u16,
+    config: Option<std::path::PathBuf>,
 }
 
 impl Default for ProxyArgs {
@@ -44,6 +50,7 @@ impl Default for ProxyArgs {
         ProxyArgs {
             host: "127.0.0.1".to_string(),
             port: 8000,
+            config: None,
         }
     }
 }
@@ -67,6 +74,12 @@ fn parse_proxy_args(argv: &[String]) -> Result<ProxyArgs, AppError> {
                     .parse()
                     .map_err(|_| AppError(format!("invalid --port value: {value}")))?;
             }
+            "--config" => {
+                args.config =
+                    Some(std::path::PathBuf::from(iter.next().ok_or_else(|| {
+                        AppError("--config requires a value".to_string())
+                    })?));
+            }
             other => return Err(AppError(format!("unrecognized argument: {other}"))),
         }
     }
@@ -80,15 +93,18 @@ fn run() -> Result<(), AppError> {
         Some("chat") => chat::run(),
         Some("proxy") => {
             let args = parse_proxy_args(&argv[1..])?;
-            proxy::run(&args.host, args.port)
+            let registry = config::load_registry(args.config.as_deref())?;
+            proxy::run(&args.host, args.port, registry)
         }
         Some(other) if other.starts_with('-') => {
             let args = parse_proxy_args(&argv)?;
-            proxy::run(&args.host, args.port)
+            let registry = config::load_registry(args.config.as_deref())?;
+            proxy::run(&args.host, args.port, registry)
         }
         None => {
             let args = parse_proxy_args(&argv)?;
-            proxy::run(&args.host, args.port)
+            let registry = config::load_registry(args.config.as_deref())?;
+            proxy::run(&args.host, args.port, registry)
         }
         Some(other) => Err(AppError(format!("unrecognized subcommand: {other}"))),
     }

@@ -1,14 +1,35 @@
-use std::io::{self, BufRead, BufReader, Read, Write};
-use std::time::Duration;
+use std::collections::BTreeMap;
+use std::io::{self, BufRead, BufReader, Cursor, Read, Write};
+use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::auth::{self, Auth};
 use crate::AppError;
+use crate::application::{InferenceProvider, InferenceService, SequentialSessionIds};
+use crate::auth::LocalCredentialProvider;
+use crate::config;
+use crate::domain::{
+    ClientProtocol, InferenceError, InferenceEvent, InferenceRequest, InferenceResult,
+};
+use crate::providers::{AnthropicProvider, CodexProvider};
 
 /// Interactive REPL that streams replies from the Responses API.
 pub fn run() -> Result<(), AppError> {
-    let mut auth = auth::load_auth()?;
+    let registry = config::load_registry(None)?;
+    let codex: Arc<dyn InferenceProvider> = Arc::new(CodexProvider::default());
+    let anthropic: Arc<dyn InferenceProvider> = Arc::new(AnthropicProvider::default());
+    let service = InferenceService::new(
+        Arc::new(registry),
+        Arc::new(LocalCredentialProvider),
+        [codex, anthropic],
+        Arc::new(SequentialSessionIds::default()),
+    );
+    run_with_inference(&|request| service.infer(request))
+}
+
+fn run_with_inference(
+    inference: &impl Fn(InferenceRequest) -> Result<InferenceResult, InferenceError>,
+) -> Result<(), AppError> {
     let mut messages: Vec<Value> = Vec::new();
     println!("claudex-proxy: /exit or Ctrl-D to quit");
 
@@ -38,7 +59,7 @@ pub fn run() -> Result<(), AppError> {
 
         messages.push(serde_json::json!({"role": "user", "content": content}));
 
-        match ask(&mut auth, &messages) {
+        match ask(inference, &messages) {
             Ok(answer) => {
                 let answer = if answer.is_empty() {
                     "[no text output]".to_string()
@@ -66,31 +87,54 @@ fn build_payload(messages: &[Value]) -> Value {
     })
 }
 
-fn send_stream(auth: &Auth, payload: &Value) -> Result<ureq::Response, ureq::Error> {
-    let url = format!("{}/responses", auth.base_url);
-    let mut request = ureq::post(&url).timeout(Duration::from_secs(120));
-    for (name, value) in auth.headers() {
-        request = request.set(&name, &value);
-    }
-    request = request.set("Accept", "text/event-stream");
-    request.send_json(payload.clone())
-}
-
-fn ask(auth: &mut Auth, messages: &[Value]) -> Result<String, AppError> {
+fn ask(
+    inference: &impl Fn(InferenceRequest) -> Result<InferenceResult, InferenceError>,
+    messages: &[Value],
+) -> Result<String, AppError> {
     let payload = build_payload(messages);
-    let response = auth::send_with_refresh_retry(auth, |auth| send_stream(auth, &payload))
-        .map_err(ureq_error_to_app_error)?;
-    parse_stream_text(response.into_reader())
-}
-
-fn ureq_error_to_app_error(error: ureq::Error) -> AppError {
-    match error {
-        ureq::Error::Status(code, response) => {
-            let body = response.into_string().unwrap_or_default();
-            AppError(format!("HTTP {code}: {body}"))
+    let model = payload
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or("gpt-5.5")
+        .to_string();
+    let request = InferenceRequest {
+        requested_model: model,
+        protocol: ClientProtocol::Responses,
+        system: vec![],
+        messages: vec![],
+        tools: vec![],
+        tool_choice: None,
+        reasoning: None,
+        max_output_tokens: None,
+        stream: true,
+        provider_options: BTreeMap::new(),
+        proxy: None,
+        native_body: payload,
+    };
+    let result = inference(request).map_err(AppError::from)?;
+    if let Some(InferenceEvent::NativeResponse { status, body, .. }) = result.events.first() {
+        if !(200..300).contains(status) {
+            return Err(AppError(format!(
+                "HTTP {status}: {}",
+                String::from_utf8_lossy(body)
+            )));
         }
-        ureq::Error::Transport(transport) => AppError(transport.to_string()),
+        return parse_stream_text(Cursor::new(body));
     }
+    let mut answer = String::new();
+    for event in result.events {
+        match event {
+            InferenceEvent::TextDelta { delta, .. }
+            | InferenceEvent::ReasoningDelta { delta, .. } => answer.push_str(&delta),
+            InferenceEvent::ContentBlockStart {
+                block: crate::domain::ContentBlock::Text { text },
+                ..
+            } => answer.push_str(&text),
+            InferenceEvent::Error { error } => return Err(AppError::from(error)),
+            _ => {}
+        }
+    }
+    Ok(answer.trim().to_string())
 }
 
 fn parse_stream_text(reader: impl Read) -> Result<String, AppError> {
@@ -158,9 +202,7 @@ fn handle_stream_event(
             }
             Ok(None)
         }
-        Some("response.completed") => Ok(Some(
-            event.get("response").cloned().unwrap_or(event),
-        )),
+        Some("response.completed") => Ok(Some(event.get("response").cloned().unwrap_or(event))),
         Some("error") | Some("response.failed") => Err(AppError(stream_error_message(&event))),
         _ => Ok(None),
     }
@@ -186,7 +228,11 @@ fn stream_error_message(event: &Value) -> String {
 }
 
 fn output_text(response: &Value) -> String {
-    if let Some(text) = response.get("output_text").and_then(Value::as_str).filter(|t| !t.is_empty()) {
+    if let Some(text) = response
+        .get("output_text")
+        .and_then(Value::as_str)
+        .filter(|t| !t.is_empty())
+    {
         return text.to_string();
     }
 
@@ -246,8 +292,37 @@ mod tests {
 
     #[test]
     fn raises_on_response_failed_event() {
-        let sse = "event: response.failed\ndata: {\"response\":{\"error\":{\"message\":\"failed\"}}}\n\n";
+        let sse =
+            "event: response.failed\ndata: {\"response\":{\"error\":{\"message\":\"failed\"}}}\n\n";
         let error = parse_stream_text(sse.as_bytes()).unwrap_err();
         assert_eq!(error.0, "failed");
+    }
+
+    #[test]
+    fn chat_uses_application_boundary_with_complete_history() {
+        let seen = std::sync::Mutex::new(None);
+        let inference = |request: InferenceRequest| {
+            *seen.lock().unwrap() = Some(request);
+            Ok(InferenceResult {
+                events: vec![InferenceEvent::NativeResponse {
+                    protocol: ClientProtocol::Responses,
+                    status: 200,
+                    content_type: "text/event-stream".into(),
+                    body: b"event: response.output_text.delta\ndata: {\"delta\":\"ok\"}\n\n"
+                        .to_vec(),
+                }],
+                metadata: None,
+            })
+        };
+        let messages = vec![
+            serde_json::json!({"role":"user","content":"first"}),
+            serde_json::json!({"role":"assistant","content":"answer"}),
+            serde_json::json!({"role":"user","content":"second"}),
+        ];
+        assert_eq!(ask(&inference, &messages).unwrap(), "ok");
+        let request = seen.lock().unwrap();
+        let request = request.as_ref().unwrap();
+        assert_eq!(request.native_body["input"], Value::Array(messages));
+        assert!(request.stream);
     }
 }
