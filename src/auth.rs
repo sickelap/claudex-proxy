@@ -300,7 +300,7 @@ mod tests {
 
     fn write_auth_and_load(data: &Value) -> Result<Auth, AppError> {
         let mut path = std::env::temp_dir();
-        path.push(format!("codex-proxy-test-auth-{:p}.json", data));
+        path.push(format!("claudex-proxy-test-auth-{:p}.json", data));
         let mut file = fs::File::create(&path).unwrap();
         file.write_all(serde_json::to_vec(data).unwrap().as_slice())
             .unwrap();

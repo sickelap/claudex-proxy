@@ -10,7 +10,7 @@ use crate::AppError;
 pub fn run() -> Result<(), AppError> {
     let mut auth = auth::load_auth()?;
     let mut messages: Vec<Value> = Vec::new();
-    println!("codex-proxy: /exit or Ctrl-D to quit");
+    println!("claudex-proxy: /exit or Ctrl-D to quit");
 
     let stdin = io::stdin();
     loop {

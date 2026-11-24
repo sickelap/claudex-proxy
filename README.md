@@ -1,9 +1,9 @@
-# codex-proxy
+# claudex-proxy
 
-`codex-proxy` is a small, self-contained Rust binary for using credentials from the Codex CLI with the OpenAI Responses API. It can connect agentic coding tools that support the OpenAI Responses API to the ChatGPT Codex backend. It provides two ways to send requests, selected by subcommand:
+`claudex-proxy` is a small, self-contained Rust binary for using credentials from the Codex CLI with the OpenAI Responses API. It can connect agentic coding tools that support the OpenAI Responses API to the ChatGPT Codex backend. It provides two ways to send requests, selected by subcommand:
 
-- `codex-proxy chat`: an interactive terminal chat client.
-- `codex-proxy` / `codex-proxy proxy`: a local OpenAI-compatible Responses API endpoint for agentic coding tools and other API clients.
+- `claudex-proxy chat`: an interactive terminal chat client.
+- `claudex-proxy` / `claudex-proxy proxy`: a local OpenAI-compatible Responses API endpoint for agentic coding tools and other API clients.
 
 Both subcommands read `~/.codex/auth.json`. Codex OAuth credentials are sent to the ChatGPT Codex backend; an `OPENAI_API_KEY` entry in that file is used with the public OpenAI API instead. OAuth credentials are refreshed in memory after a `401` or `403` response when a refresh token is available.
 
@@ -25,14 +25,14 @@ codex login
 cargo build --release
 ```
 
-The binary is written to `target/release/codex-proxy`.
+The binary is written to `target/release/claudex-proxy`.
 
 ## Interactive Chat
 
 Run the terminal client from the repository root:
 
 ```sh
-codex-proxy chat
+claudex-proxy chat
 ```
 
 Enter prompts at the `>` prompt. The client keeps the current conversation in memory and streams the response text. Use `/exit`, `/quit`, or Ctrl-D to quit.
@@ -40,7 +40,7 @@ Enter prompts at the `>` prompt. The client keeps the current conversation in me
 The default model is `gpt-5.5`. Override it with `OPENAI_MODEL`:
 
 ```sh
-OPENAI_MODEL=gpt-5.6-sol codex-proxy chat
+OPENAI_MODEL=gpt-5.6-sol claudex-proxy chat
 ```
 
 Conversation history is not persisted.
@@ -52,13 +52,13 @@ The proxy exposes `POST /v1/responses` on `127.0.0.1:8000` and forwards requests
 Start it in one terminal (`proxy` is the default subcommand):
 
 ```sh
-codex-proxy
+claudex-proxy
 ```
 
 Use a different local address or port when needed:
 
 ```sh
-codex-proxy proxy --host 127.0.0.1 --port 9000
+claudex-proxy proxy --host 127.0.0.1 --port 9000
 ```
 
 Configure your tool to use this OpenAI API base URL:
