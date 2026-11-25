@@ -162,6 +162,7 @@ mod tests {
                 .all(|mapping| mapping.provider == ProviderKind::Codex)
         );
         let registry = StaticModelRegistry::new(mappings.clone()).unwrap();
+        assert!(registry.resolve(crate::chat::DEFAULT_MODEL).is_ok());
         for mapping in mappings {
             assert!(registry.resolve(&mapping.id).is_ok());
         }

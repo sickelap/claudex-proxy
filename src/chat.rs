@@ -13,6 +13,8 @@ use crate::domain::{
 };
 use crate::providers::{AnthropicProvider, CodexProvider};
 
+pub(crate) const DEFAULT_MODEL: &str = "gpt-5.6-sol";
+
 /// Interactive REPL that streams replies from the Responses API.
 pub fn run() -> Result<(), AppError> {
     let registry = config::load_registry(None)?;
@@ -78,7 +80,7 @@ fn run_with_inference(
 }
 
 fn build_payload(messages: &[Value]) -> Value {
-    let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-5.5".to_string());
+    let model = std::env::var("OPENAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
     serde_json::json!({
         "model": model,
         "input": messages,
@@ -95,7 +97,7 @@ fn ask(
     let model = payload
         .get("model")
         .and_then(Value::as_str)
-        .unwrap_or("gpt-5.5")
+        .unwrap_or(DEFAULT_MODEL)
         .to_string();
     let request = InferenceRequest {
         requested_model: model,

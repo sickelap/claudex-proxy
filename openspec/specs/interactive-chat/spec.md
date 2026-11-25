@@ -40,7 +40,7 @@ The chat client SHALL send the full in-memory conversation as a non-persisted st
 #### Scenario: Use the default model
 
 - **WHEN** `OPENAI_MODEL` is not set
-- **THEN** the request SHALL use model `gpt-5.5`
+- **THEN** the request SHALL use model `gpt-5.6-sol`
 - **AND** it SHALL set `store` to `false`
 - **AND** it SHALL set `stream` to `true`
 

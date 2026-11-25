@@ -71,7 +71,7 @@ Direct Responses request:
 ```sh
 curl http://127.0.0.1:8000/v1/responses \
   -H 'Content-Type: application/json' \
-  -d '{"model":"gpt-5.5","input":"Hello","store":false}'
+  -d '{"model":"gpt-5.6-sol","input":"Hello","store":false}'
 ```
 
 Direct Messages request:
@@ -101,7 +101,7 @@ The extension is removed before the upstream call. JSON responses receive a `cla
 claudex-proxy chat
 ```
 
-The chat keeps history in memory and streams text. Use `/exit`, `/quit`, or Ctrl-D to quit. It defaults to `gpt-5.5`; set `OPENAI_MODEL` to another configured alias.
+The chat keeps history in memory and streams text. Use `/exit`, `/quit`, or Ctrl-D to quit. It defaults to `gpt-5.6-sol`; set `OPENAI_MODEL` to another configured alias.
 
 ## Compatibility limits
 
